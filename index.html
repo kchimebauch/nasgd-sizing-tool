@@ -167,6 +167,9 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       <label class="f">Fuel
         <select id="jFuel"><option value="NG">Natural gas</option><option value="LP">Propane (LP)</option></select>
       </label>
+      <label class="f">NEC version (lighting load)
+        <select id="jNec"><option value="2023">NEC 2023 — 3 VA/sq ft</option><option value="2026">NEC 2026 — 2 VA/sq ft (LED era)</option></select>
+      </label>
     </div>
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
       <div style="font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:8px">DEALER / MEMBER BRANDING <span style="font-weight:400;color:var(--ink-3)">— shown on the printed summary with the NASGD member badge; saved on this device</span></div>
@@ -352,7 +355,7 @@ function computeScenario(state, scenario){
 
   // --- running demand for base loads ---
   const generalVA = state.generalOn(scenario) ?
-      (3 * state.sqft + 1500 * state.sac + 1500) : 0; // laundry circuit incl.
+      (state.vaSqft * state.sqft + 1500 * state.sac + 1500) : 0; // laundry circuit incl.
   const poolVA = generalVA + sum(base.filter(l => l.pool), l => l.runW * l.qty);
   const hvacW  = sum(base.filter(l => !l.pool), l => l.runW * l.qty);
   let runningW = demandFactor(poolVA) + hvacW;
@@ -452,6 +455,8 @@ const S = {
 Object.defineProperty(S,'sqft',{get(){return +document.getElementById('jSqft').value||0}});
 Object.defineProperty(S,'sac', {get(){return +document.getElementById('jSAC').value||2}});
 Object.defineProperty(S,'fuel',{get(){return document.getElementById('jFuel').value}});
+Object.defineProperty(S,'necVer',{get(){return document.getElementById('jNec').value}});
+Object.defineProperty(S,'vaSqft',{get(){return S.necVer==='2026'?2:3}});
 S.generalOn = (scen)=> scen==='essential' ? S.generalEssential : true;
 
 /* Unified active load list for the engine */
@@ -584,11 +589,11 @@ function renderGen(){
   const t = $('tblGen'); t.innerHTML =
     `<tr><th></th><th>Load</th><th>Qty</th><th class="num">Running W</th><th class="num">Starting W</th><th>Flags</th><th></th></tr>`;
   // general lighting pseudo-row
-  const gVA = 3*S.sqft + 1500*S.sac + 1500;
+  const gVA = S.vaSqft*S.sqft + 1500*S.sac + 1500;
   const trg = document.createElement('tr');
   trg.innerHTML = `
     <td><input type="checkbox" class="inc" checked disabled title="Always counted for whole-house"></td>
-    <td>General lighting &amp; receptacles <span style="color:var(--ink-3)">(3 VA/sq ft + ${S.sac} kitchen circuits + laundry)</span></td>
+    <td>General lighting &amp; receptacles <span style="color:var(--ink-3)">(${S.vaSqft} VA/sq ft per NEC ${S.necVer} + ${S.sac} kitchen circuits + laundry)</span></td>
     <td></td><td class="num">${fmt(gVA)}</td><td class="num">—</td><td class="flags"></td><td></td>`;
   trg.querySelector('.flags').append(tagBtn('E',S.generalEssential,v=>S.generalEssential=v));
   t.appendChild(trg);
@@ -752,7 +757,7 @@ function renderPrint(){
     </div>
     <h3 style="font-size:13px;margin-bottom:2px">Loads counted (${S.sqft.toLocaleString()} sq ft home)</h3>
     <table><tr><th>Load</th><th style="text-align:right">Running W</th><th style="text-align:right">Starting W</th><th>Essential</th><th>Managed</th></tr>
-      <tr><td>General lighting &amp; receptacles</td><td style="text-align:right">${fmt(3*S.sqft+1500*S.sac+1500)}</td><td style="text-align:right">—</td><td>${S.generalEssential?'✓':''}</td><td></td></tr>
+      <tr><td>General lighting &amp; receptacles (NEC ${S.necVer}: ${S.vaSqft} VA/sq ft)</td><td style="text-align:right">${fmt(S.vaSqft*S.sqft+1500*S.sac+1500)}</td><td style="text-align:right">—</td><td>${S.generalEssential?'✓':''}</td><td></td></tr>
       ${on.map(l=>`<tr><td>${l.name}${l.qty>1?' ×'+l.qty:''}</td>
         <td style="text-align:right">${fmt(l.runW*l.qty)}</td>
         <td style="text-align:right">${l.motor?fmt(l.startW):'—'}</td>
@@ -848,7 +853,7 @@ $('addOther').addEventListener('click',()=>{S.other.push({name:'',run:1000,start
 $('jHeat').addEventListener('change',e=>{S.heat=e.target.value;refresh();});
 $('jHeatKw').addEventListener('change',e=>{S.heatKw=+e.target.value||0;refreshResultsOnly();});
 $('jAuxKw').addEventListener('change',e=>{S.auxKw=+e.target.value||0;refreshResultsOnly();});
-['jSqft','jSAC','jFuel'].forEach(id=>$(id).addEventListener('change',()=>{renderGen();refreshResultsOnly();}));
+['jSqft','jSAC','jFuel','jNec'].forEach(id=>$(id).addEventListener('change',()=>{renderGen();refreshResultsOnly();}));
 
 /* ---- dealer settings persistence (safe: no-ops where storage is unavailable) ---- */
 const store = {
