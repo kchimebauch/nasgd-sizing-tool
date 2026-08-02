@@ -164,7 +164,6 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       <label class="f">Estimator<input type="text" id="jEstimator" placeholder="Your name"></label>
       <label class="f">Finished sq ft<input type="number" id="jSqft" value="2000" min="0" step="50"></label>
       <label class="f">Small-appliance circuits (kitchen)<input type="number" id="jSAC" value="2" min="2" max="6"></label>
-      <label class="f">Laundry circuits (1,500 VA each)<input type="number" id="jLaundry" value="1" min="0" max="3"></label>
       <label class="f">Fuel
         <select id="jFuel"><option value="NG">Natural gas</option><option value="LP">Propane (LP)</option></select>
       </label>
@@ -450,7 +449,7 @@ const S = {
     {name:'Electric range/oven',     run:12000,start:0,    qty:1, on:false, essential:false, managed:true,  motor:false},
     {name:'Wall oven',               run:4800, start:0,    qty:1, on:false, essential:false, managed:false, motor:false},
     {name:'Electric cooktop',        run:7200, start:0,    qty:1, on:false, essential:false, managed:false, motor:false},
-    {name:'Garbage disposal',        run:1100, start:2200, qty:1, on:false, essential:false, managed:false, motor:true},
+    {name:'Garbage disposal',        run:1100, start:2200, qty:1, on:true,  essential:false, managed:false, motor:true},
     {name:'EV charger — 30A (7.2 kW)', run:7200, start:0,  qty:1, on:false, essential:false, managed:true,  motor:false, cont:true},
     {name:'EV charger — 40A (9.6 kW)', run:9600, start:0,  qty:1, on:false, essential:false, managed:true,  motor:false, cont:true},
     {name:'EV charger — 48A (11.5 kW)',run:11500,start:0,  qty:1, on:false, essential:false, managed:true,  motor:false, cont:true}
@@ -459,7 +458,7 @@ const S = {
 };
 Object.defineProperty(S,'sqft',{get(){return +document.getElementById('jSqft').value||0}});
 Object.defineProperty(S,'sac', {get(){return +document.getElementById('jSAC').value||2}});
-Object.defineProperty(S,'laundry',{get(){const v=document.getElementById('jLaundry').value; return v===''?1:Math.max(0,+v||0)}});
+S.laundry = 1; // NEC-required laundry circuit — always counted, no input needed
 Object.defineProperty(S,'fuel',{get(){return document.getElementById('jFuel').value}});
 Object.defineProperty(S,'necVer',{get(){return document.getElementById('jNec').value}});
 Object.defineProperty(S,'vaSqft',{get(){return S.necVer==='2026'?2:3}});
@@ -599,7 +598,7 @@ function renderGen(){
   const trg = document.createElement('tr');
   trg.innerHTML = `
     <td><input type="checkbox" class="inc" checked disabled title="Always counted for whole-house"></td>
-    <td>General lighting &amp; receptacles <span style="color:var(--ink-3)">(${S.vaSqft} VA/sq ft per NEC ${S.necVer} + ${S.sac} kitchen + ${S.laundry} laundry circuits)</span></td>
+    <td>General lighting &amp; receptacles <span style="color:var(--ink-3)">(${S.vaSqft} VA/sq ft per NEC ${S.necVer} + ${S.sac} kitchen circuits + laundry circuit)</span></td>
     <td></td><td class="num">${fmt(gVA)}</td><td class="num">—</td><td class="flags"></td><td></td>`;
   trg.querySelector('.flags').append(tagBtn('E',S.generalEssential,v=>S.generalEssential=v));
   t.appendChild(trg);
@@ -718,7 +717,8 @@ function renderResults(){
   host.appendChild(grid);
   host.appendChild(gasCard(lastResults));
   const note = document.createElement('div'); note.className='note';
-  note.innerHTML = `Loading pills: <b>≤80%</b> comfortable · <b>80–90%</b> acceptable (90% cap policy) · unit is bumped up if running load exceeds 90% of its ${S.fuel} rating or start peak exceeds ${SURGE_FACTOR}× rating.
+  note.innerHTML = `<b>Standard inclusions</b> (counted automatically, no entry needed): general lighting &amp; receptacles at ${S.vaSqft} VA/sq ft, ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Uncheck any load in step 4 for the rare home without it.<br>
+  Loading pills: <b>≤80%</b> comfortable · <b>80–90%</b> acceptable (90% cap policy) · unit is bumped up if running load exceeds 90% of its ${S.fuel} rating or start peak exceeds ${SURGE_FACTOR}× rating.
   Model ratings are typical published LP/NG figures — <b>verify against current spec sheets before quoting</b>. LRA values by tonnage are typical; use nameplate when available. Soft starter modeled at ${Math.round((1-SOFT_START_MULT)*100)}% inrush reduction.`;
   host.appendChild(note);
 }
@@ -791,7 +791,7 @@ function renderPrint(){
     </div>
     <h3 style="font-size:13px;margin-bottom:2px">Loads counted (${S.sqft.toLocaleString()} sq ft home)</h3>
     <table><tr><th>Load</th><th style="text-align:right">Running W</th><th style="text-align:right">Starting W</th><th>Essential</th><th>Managed</th></tr>
-      <tr><td>General lighting &amp; receptacles (NEC ${S.necVer}: ${S.vaSqft} VA/sq ft + ${S.sac} kitchen + ${S.laundry} laundry ckts)</td><td style="text-align:right">${fmt(S.vaSqft*S.sqft+1500*S.sac+1500*S.laundry)}</td><td style="text-align:right">—</td><td>${S.generalEssential?'✓':''}</td><td></td></tr>
+      <tr><td>General lighting &amp; receptacles (NEC ${S.necVer}: ${S.vaSqft} VA/sq ft + ${S.sac} kitchen circuits + laundry)</td><td style="text-align:right">${fmt(S.vaSqft*S.sqft+1500*S.sac+1500*S.laundry)}</td><td style="text-align:right">—</td><td>${S.generalEssential?'✓':''}</td><td></td></tr>
       ${on.map(l=>`<tr><td>${l.name}${l.qty>1?' ×'+l.qty:''}</td>
         <td style="text-align:right">${fmt(l.runW*l.qty)}</td>
         <td style="text-align:right">${l.motor?fmt(l.startW):'—'}</td>
@@ -830,7 +830,7 @@ function renderPrint(){
       <img src="${NASGD_LOGO}" alt="NASGD" style="height:30px">
       <span style="font-size:11px;color:#333"><b>Proud Member</b> — National Association of Standby Generator Dealers<br>By Dealers. For the Industry. · nasgd.com</span>
     </div>
-    <div class="foot">Method: NEC 220.83(B) optional calculation — general and appliance loads demand-factored (first 8 kVA @ 100%, remainder @ 40%), larger of heating or cooling at 100%, largest-motor starting check against running load. Sizing policy: running load capped at 90% of the unit's rating on the selected fuel; starting peak within ${SURGE_FACTOR}× rating. Ratings shown are typical published figures — final selection verified against manufacturer spec sheets. This is a sizing aid, not an engineering document. · NASGD — National Association of Standby Generator Dealers · By Dealers. For the Industry.</div>`;
+    <div class="foot">Standard inclusions counted automatically: general lighting &amp; receptacles (${S.vaSqft} VA/sq ft per NEC ${S.necVer}), ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Method: NEC 220.83(B) optional calculation — general and appliance loads demand-factored (first 8 kVA @ 100%, remainder @ 40%), larger of heating or cooling at 100%, largest-motor starting check against running load. Sizing policy: running load capped at 90% of the unit's rating on the selected fuel; starting peak within ${SURGE_FACTOR}× rating. Ratings shown are typical published figures — final selection verified against manufacturer spec sheets. This is a sizing aid, not an engineering document. · NASGD — National Association of Standby Generator Dealers · By Dealers. For the Industry.</div>`;
 }
 
 /* ---------- wizard / mode ---------- */
@@ -887,7 +887,7 @@ $('addOther').addEventListener('click',()=>{S.other.push({name:'',run:1000,start
 $('jHeat').addEventListener('change',e=>{S.heat=e.target.value;refresh();});
 $('jHeatKw').addEventListener('change',e=>{S.heatKw=+e.target.value||0;refreshResultsOnly();});
 $('jAuxKw').addEventListener('change',e=>{S.auxKw=+e.target.value||0;refreshResultsOnly();});
-['jSqft','jSAC','jLaundry','jFuel','jNec'].forEach(id=>$(id).addEventListener('change',()=>{renderGen();refreshResultsOnly();}));
+['jSqft','jSAC','jFuel','jNec'].forEach(id=>$(id).addEventListener('change',()=>{renderGen();refreshResultsOnly();}));
 
 /* ---- dealer settings persistence (safe: no-ops where storage is unavailable) ---- */
 const store = {
