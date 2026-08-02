@@ -164,6 +164,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       <label class="f">Estimator<input type="text" id="jEstimator" placeholder="Your name"></label>
       <label class="f">Finished sq ft<input type="number" id="jSqft" value="2000" min="0" step="50"></label>
       <label class="f">Small-appliance circuits (kitchen)<input type="number" id="jSAC" value="2" min="2" max="6"></label>
+      <label class="f">Laundry circuits (1,500 VA each)<input type="number" id="jLaundry" value="1" min="0" max="3"></label>
       <label class="f">Fuel
         <select id="jFuel"><option value="NG">Natural gas</option><option value="LP">Propane (LP)</option></select>
       </label>
@@ -355,7 +356,7 @@ function computeScenario(state, scenario){
 
   // --- running demand for base loads ---
   const generalVA = state.generalOn(scenario) ?
-      (state.vaSqft * state.sqft + 1500 * state.sac + 1500) : 0; // laundry circuit incl.
+      (state.vaSqft * state.sqft + 1500 * state.sac + 1500 * state.laundry) : 0;
   const poolVA = generalVA + sum(base.filter(l => l.pool), l => l.runW * l.qty);
   const hvacW  = sum(base.filter(l => !l.pool), l => l.runW * l.qty);
   let runningW = demandFactor(poolVA) + hvacW;
@@ -448,12 +449,17 @@ const S = {
     {name:'Electric water heater',   run:4500, start:0,    qty:1, on:false, essential:false, managed:true,  motor:false},
     {name:'Electric range/oven',     run:12000,start:0,    qty:1, on:false, essential:false, managed:true,  motor:false},
     {name:'Wall oven',               run:4800, start:0,    qty:1, on:false, essential:false, managed:false, motor:false},
-    {name:'Electric cooktop',        run:7200, start:0,    qty:1, on:false, essential:false, managed:false, motor:false}
+    {name:'Electric cooktop',        run:7200, start:0,    qty:1, on:false, essential:false, managed:false, motor:false},
+    {name:'Garbage disposal',        run:1100, start:2200, qty:1, on:false, essential:false, managed:false, motor:true},
+    {name:'EV charger — 30A (7.2 kW)', run:7200, start:0,  qty:1, on:false, essential:false, managed:true,  motor:false, cont:true},
+    {name:'EV charger — 40A (9.6 kW)', run:9600, start:0,  qty:1, on:false, essential:false, managed:true,  motor:false, cont:true},
+    {name:'EV charger — 48A (11.5 kW)',run:11500,start:0,  qty:1, on:false, essential:false, managed:true,  motor:false, cont:true}
   ],
   other:[]  // {name, run, start, qty, on, essential, managed, cont}
 };
 Object.defineProperty(S,'sqft',{get(){return +document.getElementById('jSqft').value||0}});
 Object.defineProperty(S,'sac', {get(){return +document.getElementById('jSAC').value||2}});
+Object.defineProperty(S,'laundry',{get(){const v=document.getElementById('jLaundry').value; return v===''?1:Math.max(0,+v||0)}});
 Object.defineProperty(S,'fuel',{get(){return document.getElementById('jFuel').value}});
 Object.defineProperty(S,'necVer',{get(){return document.getElementById('jNec').value}});
 Object.defineProperty(S,'vaSqft',{get(){return S.necVer==='2026'?2:3}});
@@ -589,11 +595,11 @@ function renderGen(){
   const t = $('tblGen'); t.innerHTML =
     `<tr><th></th><th>Load</th><th>Qty</th><th class="num">Running W</th><th class="num">Starting W</th><th>Flags</th><th></th></tr>`;
   // general lighting pseudo-row
-  const gVA = S.vaSqft*S.sqft + 1500*S.sac + 1500;
+  const gVA = S.vaSqft*S.sqft + 1500*S.sac + 1500*S.laundry;
   const trg = document.createElement('tr');
   trg.innerHTML = `
     <td><input type="checkbox" class="inc" checked disabled title="Always counted for whole-house"></td>
-    <td>General lighting &amp; receptacles <span style="color:var(--ink-3)">(${S.vaSqft} VA/sq ft per NEC ${S.necVer} + ${S.sac} kitchen circuits + laundry)</span></td>
+    <td>General lighting &amp; receptacles <span style="color:var(--ink-3)">(${S.vaSqft} VA/sq ft per NEC ${S.necVer} + ${S.sac} kitchen + ${S.laundry} laundry circuits)</span></td>
     <td></td><td class="num">${fmt(gVA)}</td><td class="num">—</td><td class="flags"></td><td></td>`;
   trg.querySelector('.flags').append(tagBtn('E',S.generalEssential,v=>S.generalEssential=v));
   t.appendChild(trg);
@@ -675,8 +681,36 @@ function mathTable(r){
 }
 
 let lastResults = null;
+function bigLoads(){
+  // AC units plus any enabled load ≥4 kW running — the shed-module candidates
+  const rows = [...S.gen, ...S.other].filter(l=>l.on && (+l.run||0) >= 4000);
+  return { acs: S.acs.filter(a=>a.on), rows };
+}
 function renderResults(){
   const host = $('results'); host.innerHTML='';
+  // one-tap what-ifs
+  const wi = document.createElement('div');
+  wi.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px';
+  const acsOn = S.acs.filter(a=>a.on);
+  const softAll = acsOn.length>0 && acsOn.every(a=>a.soft);
+  const bl = bigLoads();
+  const bigAll = (bl.acs.length+bl.rows.length)>0 && bl.acs.every(a=>a.managed) && bl.rows.every(l=>l.managed);
+  const mkChip = (label, on, cb) => {
+    const b = document.createElement('button');
+    b.className = 'btn';
+    b.style.cssText = on ? 'border-color:var(--green);background:#f2fae8;color:#3e6b12;font-weight:700' : '';
+    b.textContent = (on?'✓ ':'') + label;
+    b.addEventListener('click', ()=>{ cb(); refresh(); });
+    return b;
+  };
+  const lab = document.createElement('span');
+  lab.style.cssText='font-size:12px;font-weight:700;color:var(--ink-2)';
+  lab.textContent = 'WHAT IF:';
+  wi.append(lab,
+    mkChip('Soft starter on AC', softAll, ()=>{ const v=!softAll; S.acs.forEach(a=>{if(a.on)a.soft=v;}); }),
+    mkChip('All big loads (≥4 kW) on load mgmt', bigAll, ()=>{ const v=!bigAll; bl.acs.forEach(a=>a.managed=v); bl.rows.forEach(l=>l.managed=v); })
+  );
+  host.appendChild(wi);
   const grid = document.createElement('div'); grid.className='scen-grid';
   const order = ['whole','managed','essential'];
   lastResults = order.map(s=>computeScenario(S,s));
@@ -757,7 +791,7 @@ function renderPrint(){
     </div>
     <h3 style="font-size:13px;margin-bottom:2px">Loads counted (${S.sqft.toLocaleString()} sq ft home)</h3>
     <table><tr><th>Load</th><th style="text-align:right">Running W</th><th style="text-align:right">Starting W</th><th>Essential</th><th>Managed</th></tr>
-      <tr><td>General lighting &amp; receptacles (NEC ${S.necVer}: ${S.vaSqft} VA/sq ft)</td><td style="text-align:right">${fmt(S.vaSqft*S.sqft+1500*S.sac+1500)}</td><td style="text-align:right">—</td><td>${S.generalEssential?'✓':''}</td><td></td></tr>
+      <tr><td>General lighting &amp; receptacles (NEC ${S.necVer}: ${S.vaSqft} VA/sq ft + ${S.sac} kitchen + ${S.laundry} laundry ckts)</td><td style="text-align:right">${fmt(S.vaSqft*S.sqft+1500*S.sac+1500*S.laundry)}</td><td style="text-align:right">—</td><td>${S.generalEssential?'✓':''}</td><td></td></tr>
       ${on.map(l=>`<tr><td>${l.name}${l.qty>1?' ×'+l.qty:''}</td>
         <td style="text-align:right">${fmt(l.runW*l.qty)}</td>
         <td style="text-align:right">${l.motor?fmt(l.startW):'—'}</td>
@@ -853,7 +887,7 @@ $('addOther').addEventListener('click',()=>{S.other.push({name:'',run:1000,start
 $('jHeat').addEventListener('change',e=>{S.heat=e.target.value;refresh();});
 $('jHeatKw').addEventListener('change',e=>{S.heatKw=+e.target.value||0;refreshResultsOnly();});
 $('jAuxKw').addEventListener('change',e=>{S.auxKw=+e.target.value||0;refreshResultsOnly();});
-['jSqft','jSAC','jFuel','jNec'].forEach(id=>$(id).addEventListener('change',()=>{renderGen();refreshResultsOnly();}));
+['jSqft','jSAC','jLaundry','jFuel','jNec'].forEach(id=>$(id).addEventListener('change',()=>{renderGen();refreshResultsOnly();}));
 
 /* ---- dealer settings persistence (safe: no-ops where storage is unavailable) ---- */
 const store = {
