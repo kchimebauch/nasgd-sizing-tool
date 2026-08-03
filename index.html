@@ -106,6 +106,9 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   .pill{display:inline-block;font-size:10px;font-weight:700;border-radius:4px;padding:2px 6px}
   .pill.ok{background:var(--good-bg);color:var(--good)}
   .pill.tight{background:var(--warn-bg);color:var(--warn)}
+  .pill.verify{background:#FDECD8;color:#B45309;box-shadow:inset 0 0 0 1px #F0B67F}
+  .nextup{font-size:10.5px;color:var(--ink-3);margin-top:2px;line-height:1.3}
+  .verifynote{margin-top:6px;font-size:11px;line-height:1.4;color:#8A4B0B;background:#FDF3E3;border:1px solid #F0D9B5;border-radius:6px;padding:6px 8px}
   .pill.over{background:var(--crit-bg);color:var(--crit)}
   details.math{font-size:12px;color:var(--ink-2)}
   details.math summary{cursor:pointer;font-weight:600;color:var(--accent);font-size:12px}
@@ -269,7 +272,8 @@ const NASGD_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZAAAADLCAMAAA
    ============================================================ */
 
 const SURGE_FACTOR = 2.0;     // momentary motor-starting capability vs rated kW
-const MAX_LOAD_PCT = 0.90;    // 90% cap policy
+const MAX_LOAD_PCT = 0.90;    // 90% cap policy — target loading
+const SOFT_CAP     = 0.93;    // 90–93% = still offered, flagged "verify loads" — estimator's call
 const SOFT_START_MULT = 0.35; // soft starter leaves ~35% of inrush
 const V = 240;
 
@@ -405,11 +409,15 @@ function pickModels(requiredKW, runningKW, peakKW, fuel){
   for (const b of brands){
     const sorted = [...b.models].sort((a,x)=>a[key]-x[key]);
     const fit = sorted.find(m =>
-      runningKW <= m[key]*MAX_LOAD_PCT && peakKW <= m[key]*SURGE_FACTOR);
+      runningKW <= m[key]*SOFT_CAP && peakKW <= m[key]*SURGE_FACTOR);
     if (fit){
       const pct = runningKW / fit[key];
+      // next size up in this lineup, offered when the fit lands in the soft band
+      const nextUp = pct > MAX_LOAD_PCT
+        ? sorted.find(m => m[key] > fit[key] && peakKW <= m[key]*SURGE_FACTOR) : null;
       out.push({brand:b.name, model:fit.m, rated:fit[key], pct,
-                status: pct <= 0.8 ? 'ok' : 'tight'});
+                status: pct <= 0.8 ? 'ok' : (pct <= MAX_LOAD_PCT ? 'tight' : 'verify'),
+                nextUp: nextUp ? {model:nextUp.m, rated:nextUp[key], pct:runningKW/nextUp[key]} : null});
     } else {
       out.push({brand:b.name, model:'— above lineup', rated:null, pct:null, status:'over'});
     }
@@ -618,7 +626,7 @@ const SCEN_META = {
   essential:{title:'Essentials only',        sub:'Only loads flagged Essential'}
 };
 
-function meterClass(pct){ return pct<=0.8?'m-good':(pct<=0.9?'m-warn':'m-crit'); }
+function meterClass(pct){ return pct<=0.8?'m-good':(pct<=SOFT_CAP?'m-warn':'m-crit'); }
 
 function scenCard(r){
   const meta = SCEN_META[r.scenario];
@@ -638,11 +646,13 @@ function scenCard(r){
     <table class="brandtbl">
       <tr><th>Brand</th><th>Smallest fit</th><th class="num">Rated</th><th>Loading</th></tr>
       ${models.map(m=>`<tr>
-        <td>${m.brand}</td><td>${m.model}</td>
+        <td>${m.brand}</td>
+        <td>${m.model}${m.status==='verify'&&m.nextUp?`<div class="nextup">tight — or step up to <b>${m.nextUp.model}</b> (${Math.round(m.nextUp.pct*100)}%)</div>`:''}</td>
         <td class="num">${m.rated?fkw(m.rated)+' kW':'—'}</td>
         <td>${m.rated?`<span class="pill ${m.status}">${Math.round(m.pct*100)}%</span>`:'<span class="pill over">size up</span>'}</td>
       </tr>`).join('')}
-    </table>`;
+    </table>
+    ${models.some(m=>m.status==='verify')?`<div class="verifynote">⚠ One or more fits land between 90% and 93% loaded — above the 90% target but still workable. <b>Verify the load list before quoting the smaller unit</b>; if anything is uncertain, step up.</div>`:''}`;
   div.innerHTML = `
     <h3>${meta.title}${meta.rec?' ★':''}</h3>
     <div class="kw">${fkw(r.requiredKW)} <small>kW required (${S.fuel})</small></div>
@@ -718,7 +728,7 @@ function renderResults(){
   host.appendChild(gasCard(lastResults));
   const note = document.createElement('div'); note.className='note';
   note.innerHTML = `<b>Standard inclusions</b> (counted automatically, no entry needed): general lighting &amp; receptacles at ${S.vaSqft} VA/sq ft, ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Uncheck any load in step 4 for the rare home without it.<br>
-  Loading pills: <b>≤80%</b> comfortable · <b>80–90%</b> acceptable (90% cap policy) · unit is bumped up if running load exceeds 90% of its ${S.fuel} rating or start peak exceeds ${SURGE_FACTOR}× rating.
+  Loading pills: <b>≤80%</b> comfortable · <b>80–90%</b> acceptable (90% target) · <b>90–93%</b> workable but flagged — verify the load list, step up if anything is uncertain · above 93% the unit is bumped up automatically, as is any unit whose start peak exceeds ${SURGE_FACTOR}× rating.
   Model ratings are typical published LP/NG figures — <b>verify against current spec sheets before quoting</b>. LRA values by tonnage are typical; use nameplate when available. Soft starter modeled at ${Math.round((1-SOFT_START_MULT)*100)}% inrush reduction.`;
   host.appendChild(note);
 }
@@ -806,7 +816,7 @@ function renderPrint(){
         fitLine = g ? `Recommended: ${g} kW class standby unit` : 'Above standard residential sizes — liquid-cooled / paralleled units required';
       } else {
         const fits = pickModels(r.requiredKW,r.runningKW,r.peakKW,S.fuel).filter(m=>m.rated);
-        fitLine = 'Fits: ' + (fits.length?fits.map(m=>`${m.brand} ${m.model} (${Math.round(m.pct*100)}% loaded)`).join(' · '):'no fit in selected lineups — liquid-cooled/paralleled units required');
+        fitLine = 'Fits: ' + (fits.length?fits.map(m=>`${m.brand} ${m.model} (${Math.round(m.pct*100)}% loaded${m.status==='verify'?' — verify loads'+(m.nextUp?`, or ${m.nextUp.model}`:''):''})`).join(' · '):'no fit in selected lineups — liquid-cooled/paralleled units required');
       }
       return `<div class="opt${meta.rec?' rec':''}">
         <h3>${meta.title}${meta.rec?' — recommended':''}</h3>
