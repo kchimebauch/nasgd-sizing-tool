@@ -298,18 +298,19 @@ const PUMP_HP = {
    verify against current spec sheets before quoting. */
 const BRANDS = [
   {name:"Kohler", models:[
-    {m:"10 kW (10RCA)", lp:10, ng:9},                      // legacy — not in current lineup, verify
+    {m:"10 kW (10RESV)", lp:10, ng:9},                     // spec G4-254 ✓ — was mislabelled 10RCA
+    {m:"12 kW (12RESV)", lp:12, ng:11},                    // spec G4-254 ✓ — model was missing
     {m:"14 kW (14RCA)", lp:14, ng:12},                     // spec G4-270 ✓
     {m:"20 kW (20RCA)", lp:20, ng:18},                     // spec G4-272 ✓
     {m:"24 kW (24RCLA) liquid-cooled", lp:24, ng:21, lc:true},      // ✓ — see note: LC, priced above 26RCA
     {m:"26 kW (26RCA)", lp:26, ng:24},                     // spec G4-315 ✓ (was 22.5 NG)
     {m:"38 kW (38RCLC) liquid-cooled", lp:38, ng:38, lc:true},      // ✓ (was 35 NG)
     {m:"48 kW (48RCLC) liquid-cooled", lp:48, ng:48, lc:true},      // spec G4-306 ✓ (was 47 NG)
-    {m:"60 kW liquid-cooled", lp:60, ng:58, lc:true}                // unverified
+    {m:"60 kW (60RCLB) liquid-cooled", lp:60, ng:58, lc:true}       // spec G4-307 ✓
   ]},
   {name:"Generac", models:[
     {m:"10 kW Guardian", lp:10, ng:9},
-    {m:"14 kW Guardian", lp:14, ng:13},
+    {m:"14 kW Guardian", lp:14, ng:14},      // spec 10-18 kW Guardian ✓ (was 13 NG)
     {m:"18 kW Guardian", lp:18, ng:17},
     {m:"20 kW Guardian", lp:20, ng:18},      // spec sheet 20/22/24 Guardian
     {m:"22 kW Guardian", lp:22, ng:19.5},
@@ -319,7 +320,7 @@ const BRANDS = [
     {m:"32 kW Protector QS", lp:32, ng:32, lc:true},  // QS spec sheet RG03224
     {m:"38 kW Protector QS", lp:38, ng:38, lc:true},  // QS spec sheet RG03824
     {m:"48 kW Protector", lp:48, ng:48, lc:true},     // spec RG04845 ✓ (was 45 NG)
-    {m:"60 kW Protector", lp:60, ng:57, lc:true}
+    {m:"60 kW Protector", lp:60, ng:60, lc:true}   // spec RG048/060/080 ✓ (was 57 NG)
   ]},
   {name:"Briggs & Stratton", models:[
     {m:"13 kW PowerProtect", lp:13, ng:11.5},   // ✓
