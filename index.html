@@ -108,6 +108,19 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
   .pill.tight{background:var(--warn-bg);color:var(--warn)}
   .pill.verify{background:#FDECD8;color:#B45309;box-shadow:inset 0 0 0 1px #F0B67F}
   .nextup{font-size:10.5px;color:var(--ink-3);margin-top:2px;line-height:1.3}
+  .modeopts{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px}
+  @media(max-width:820px){.modeopts{grid-template-columns:1fr}}
+  .modeopt{display:flex;gap:8px;align-items:flex-start;border:1px solid var(--line);border-radius:8px;
+           padding:9px 11px;cursor:pointer;font-size:12.5px;background:#fff}
+  .modeopt:has(input:checked){border-color:var(--accent);box-shadow:inset 0 0 0 1px var(--accent);background:#F7FBF5}
+  .modeopt input{margin-top:2px}
+  .modedesc{font-size:11.5px;color:var(--ink-3);line-height:1.4}
+  .tagdef{font-size:9.5px;font-weight:700;background:#EEF2F7;color:var(--ink-3);border-radius:3px;padding:1px 5px;vertical-align:1px}
+  .modenote{font-size:11px;color:var(--ink-3);line-height:1.4;margin-top:7px}
+  .mgdrow{align-items:center;gap:8px}
+  .mgdrow .pill{font-size:9.5px;white-space:nowrap}
+  .modebadge{display:inline-block;font-size:9.5px;font-weight:700;letter-spacing:.3px;text-transform:uppercase;
+             background:#EEF2F7;color:var(--ink-2);border-radius:3px;padding:1px 6px;margin-left:6px;vertical-align:2px}
   .verifynote{margin-top:6px;font-size:11px;line-height:1.4;color:#8A4B0B;background:#FDF3E3;border:1px solid #F0D9B5;border-radius:6px;padding:6px 8px}
   .pill.over{background:var(--crit-bg);color:var(--crit)}
   details.math{font-size:12px;color:var(--ink-2)}
@@ -193,6 +206,20 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
         <input type="file" id="logoFile" accept="image/*" style="font-size:12px">
         <button class="btn" id="logoClear" style="display:none;padding:4px 10px;font-size:12px">Remove logo</button>
       </div>
+
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <div style="font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:2px">LOAD-MANAGEMENT SIZING POLICY
+          <span style="font-weight:400;color:var(--ink-3)">— how the “+ load mgmt” column treats a load on a shed module. Set once; applies to every job on this device.</span></div>
+        <div class="modeopts">
+          <label class="modeopt"><input type="radio" name="mgmtMode" value="carry" checked>
+            <span><b>Size to Carry</b> <span class="tagdef">default</span><br>
+            <span class="modedesc">The set is sized so it can run its largest shed load whenever the customer wants it. The module staggers loads for comfort, not to keep the generator alive. Larger unit, fewer surprises in an outage.</span></span></label>
+          <label class="modeopt"><input type="radio" name="mgmtMode" value="shed">
+            <span><b>Size to Shed</b><br>
+            <span class="modedesc">Shed loads come out of the requirement — the set is sized to what stays on, and the module keeps the rest off while it is loaded. Smaller unit, and the method most manufacturer sizing tools use, so your number lines up with a competing quote.</span></span></label>
+        </div>
+        <div class="modenote">Size to Shed still checks that the set <b>could</b> run its largest shed load — a shed load that can never run isn't managed, it's abandoned. When that check forces a larger unit than the shed math alone, the card says so.</div>
+      </div>
     </div>
   </section>
 
@@ -274,6 +301,7 @@ const NASGD_LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAZAAAADLCAMAAA
 const SURGE_FACTOR = 2.0;     // momentary motor-starting capability vs rated kW
 const MAX_LOAD_PCT = 0.90;    // 90% cap policy — target loading
 const SOFT_CAP     = 0.93;    // 90–93% = still offered, flagged "verify loads" — estimator's call
+const MANAGED_CAP  = 1.00;    // Size-to-Shed guard: set must still be able to RUN its largest shed load
 const SOFT_START_MULT = 0.35; // soft starter leaves ~35% of inrush
 const V = 240;
 
@@ -370,13 +398,21 @@ function computeScenario(state, scenario){
   const hvacW  = sum(base.filter(l => !l.pool), l => l.runW * l.qty);
   let runningW = demandFactor(poolVA) + hvacW;
 
-  // managed loads: only the single largest runs at a time
-  let largestManagedRun = 0, largestManagedStart = 0;
+  // Load-management sizing mode (dealer setting):
+  //   'carry' — the largest shed load stays in the continuous requirement. The set can
+  //             run it any time; the module is a convenience, not a necessity.
+  //   'shed'  — shed loads come out of the continuous requirement, because the module
+  //             drops them whenever the set is loaded. Smaller unit. A guard below still
+  //             requires the set to be ABLE to run its largest shed load.
+  const shedMode = (state.mgmtMode === 'shed');
+  let largestManagedRun = 0, largestManagedStart = 0, largestManagedName = '';
   for (const l of managed){
-    largestManagedRun   = Math.max(largestManagedRun, l.runW);
+    if (l.runW > largestManagedRun){ largestManagedRun = l.runW; largestManagedName = l.name || ''; }
     largestManagedStart = Math.max(largestManagedStart, l.startW || l.runW);
   }
-  runningW += largestManagedRun;
+  if (useManaged && !shedMode) runningW += largestManagedRun;
+  // what the set actually sits at the moment the module lets the largest shed load back on
+  const runningWithManagedW = (useManaged && shedMode) ? runningW + largestManagedRun : runningW;
 
   // --- starting peak: largest motor starts against everything else running ---
   let peak = runningW;
@@ -387,7 +423,7 @@ function computeScenario(state, scenario){
   }
   if (useManaged){
     // managed loads start staggered, one at a time, against base running
-    const baseRunning = runningW - largestManagedRun;
+    const baseRunning = shedMode ? runningW : (runningW - largestManagedRun);
     let p1 = baseRunning + largestManagedStart;
     let p2 = largestMotor ? (runningW - largestMotor.runW + largestMotor.startW) : runningW;
     peak = Math.max(runningW, p1, p2);
@@ -397,18 +433,21 @@ function computeScenario(state, scenario){
 
   const reqRunKW  = runningW / 1000 / MAX_LOAD_PCT;
   const reqSurgeKW = peak / 1000 / SURGE_FACTOR;
-  const requiredKW = Math.max(reqRunKW, reqSurgeKW);
+  // Size-to-Shed guard: a shed load that can never run isn't managed, it's abandoned.
+  const shedGuardKW = (useManaged && shedMode && largestManagedRun>0) ? runningWithManagedW/1000 : 0;
+  const requiredKW = Math.max(reqRunKW, reqSurgeKW, shedGuardKW / MANAGED_CAP);
 
   return {
     scenario, loads, generalVA, poolVA,
     poolDemandW: demandFactor(poolVA), hvacW,
-    largestManagedRun, largestManagedStart,
+    largestManagedRun, largestManagedStart, largestManagedName, shedMode, shedGuardKW,
     runningKW: runningW/1000, peakKW: peak/1000,
+    runningWithManagedKW: runningWithManagedW/1000,
     requiredKW, largestMotor
   };
 }
 
-function pickModels(requiredKW, runningKW, peakKW, fuel){
+function pickModels(requiredKW, runningKW, peakKW, fuel, shedGuardKW){
   const key = fuel === 'LP' ? 'lp' : 'ng';
   const out = [];
   const brands = BRANDS.filter(b => S.brandSel[b.name]);
@@ -418,7 +457,8 @@ function pickModels(requiredKW, runningKW, peakKW, fuel){
     // be recommended just because its kW number happens to be lower.
     const sorted = [...b.models].sort((a,x)=>(a.lc?1:0)-(x.lc?1:0) || a[key]-x[key]);
     const fit = sorted.find(m =>
-      runningKW <= m[key]*SOFT_CAP && peakKW <= m[key]*SURGE_FACTOR);
+      runningKW <= m[key]*SOFT_CAP && peakKW <= m[key]*SURGE_FACTOR &&
+      (!shedGuardKW || shedGuardKW <= m[key]*MANAGED_CAP));
     if (fit){
       const pct = runningKW / fit[key];
       // next size up in this lineup, offered when the fit lands in the soft band
@@ -443,6 +483,7 @@ const S = {
   generalEssential:true,
   brandSel:{"Kohler":true,"Generac":true,"Briggs & Stratton":true},
   noOem:false, logoData:null,
+  mgmtMode:'carry',   // 'carry' = set runs its largest shed load · 'shed' = shed loads excluded
   dealer:{name:'', phone:'', web:''},
   // gas service check — existing appliance INPUT ratings in kBTU/hr
   gas:{furnace:100, wh:40, range:0, dryer:0, other:0, meter:250},
@@ -639,7 +680,7 @@ function meterClass(pct){ return pct<=0.8?'m-good':(pct<=SOFT_CAP?'m-warn':'m-cr
 
 function scenCard(r){
   const meta = SCEN_META[r.scenario];
-  const models = S.noOem ? [] : pickModels(r.requiredKW, r.runningKW, r.peakKW, S.fuel);
+  const models = S.noOem ? [] : pickModels(r.requiredKW, r.runningKW, r.peakKW, S.fuel, r.shedGuardKW);
   const best = models.filter(m=>m.rated).sort((a,b)=>a.rated-b.rated)[0];
   const gen = pickGeneric(r.runningKW, r.peakKW);
   const div = document.createElement('div');
@@ -663,12 +704,19 @@ function scenCard(r){
     </table>
     ${models.some(m=>m.status==='verify')?`<div class="verifynote">⚠ One or more fits land between 90% and 93% loaded — above the 90% target but still workable. <b>Verify the load list before quoting the smaller unit</b>; if anything is uncertain, step up.</div>`:''}`;
   div.innerHTML = `
-    <h3>${meta.title}${meta.rec?' ★':''}</h3>
+    <h3>${meta.title}${meta.rec?' ★':''}${r.scenario==='managed'?`<span class="modebadge">${r.shedMode?'size to shed':'size to carry'}</span>`:''}</h3>
     <div class="kw">${fkw(r.requiredKW)} <small>kW required (${S.fuel})</small></div>
     <div class="sub">${meta.sub}</div>
     <div>
       <div class="meter ${ratedRef?meterClass(pct):'m-crit'}"><i style="width:${Math.min(100,pct*100)}%"></i></div>
       <div class="mrow"><span>Running ${fkw(r.runningKW)} kW</span><span>Start peak ${fkw(r.peakKW)} kW</span></div>
+      ${(r.scenario==='managed' && r.shedMode && r.largestManagedRun>0 && ratedRef) ? (()=>{
+          const pw = r.runningWithManagedKW/ratedRef;
+          const cls = pw<=0.90?'ok':(pw<=1.0?'tight':'over');
+          const nm = (r.largestManagedName||'largest shed load').replace(/\s*\(.*\)\s*/,'');
+          return `<div class="mrow mgdrow"><span>Shed load back on (${nm}): ${fkw(r.runningWithManagedKW)} kW</span>
+                  <span class="pill ${cls}">${Math.round(pw*100)}%</span></div>`;
+        })() : ''}
       ${ratedRef?`<div class="mrow"><span>Full-load fuel draw (${ratedRef} kW unit)</span><span>${S.fuel==='NG'?fmt(fuelDraw(ratedRef).btu/1000)+'k BTU/hr':fuelDraw(ratedRef).gal.toFixed(1)+' gal/hr LP'}</span></div>`:''}
     </div>
     ${brandBlock}
@@ -747,7 +795,7 @@ function sizingBasisKW(results){
   // largest unit the job could take = whole-house pick (worst case for fuel supply)
   const r0 = results[0];
   if (S.noOem) return pickGeneric(r0.runningKW, r0.peakKW) || Math.ceil(r0.requiredKW);
-  const fits = pickModels(r0.requiredKW, r0.runningKW, r0.peakKW, S.fuel).filter(m=>m.rated);
+  const fits = pickModels(r0.requiredKW, r0.runningKW, r0.peakKW, S.fuel, r0.shedGuardKW).filter(m=>m.rated);
   return fits.length ? fits.sort((a,b)=>a.rated-b.rated)[0].rated : Math.ceil(r0.requiredKW);
 }
 function gasTotals(kw){
@@ -824,7 +872,7 @@ function renderPrint(){
         const g = pickGeneric(r.runningKW, r.peakKW);
         fitLine = g ? `Recommended: ${g} kW class standby unit` : 'Above standard residential sizes — liquid-cooled / paralleled units required';
       } else {
-        const fits = pickModels(r.requiredKW,r.runningKW,r.peakKW,S.fuel).filter(m=>m.rated);
+        const fits = pickModels(r.requiredKW,r.runningKW,r.peakKW,S.fuel,r.shedGuardKW).filter(m=>m.rated);
         fitLine = 'Fits: ' + (fits.length?fits.map(m=>`${m.brand} ${m.model} (${Math.round(m.pct*100)}% loaded${m.status==='verify'?' — verify loads'+(m.nextUp?`, or ${m.nextUp.model}`:''):''})`).join(' · '):'no fit in selected lineups — liquid-cooled/paralleled units required');
       }
       return `<div class="opt${meta.rec?' rec':''}">
@@ -849,7 +897,9 @@ function renderPrint(){
       <img src="${NASGD_LOGO}" alt="NASGD" style="height:30px">
       <span style="font-size:11px;color:#333"><b>Proud Member</b> — National Association of Standby Generator Dealers<br>By Dealers. For the Industry. · nasgd.com</span>
     </div>
-    <div class="foot">Standard inclusions counted automatically: general lighting &amp; receptacles (${S.vaSqft} VA/sq ft per NEC ${S.necVer}), ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Method: NEC 220.83(B) optional calculation — general and appliance loads demand-factored (first 8 kVA @ 100%, remainder @ 40%), larger of heating or cooling at 100%, largest-motor starting check against running load. Sizing policy: running load capped at 90% of the unit's rating on the selected fuel; starting peak within ${SURGE_FACTOR}× rating. Ratings shown are typical published figures — final selection verified against manufacturer spec sheets. This is a sizing aid, not an engineering document. · NASGD — National Association of Standby Generator Dealers · By Dealers. For the Industry.</div>`;
+    <div class="foot">Load-management sizing policy: <b>${S.mgmtMode==='shed'?'Size to Shed':'Size to Carry'}</b> — ${S.mgmtMode==='shed'
+        ? 'shed loads are excluded from the continuous requirement (the set is sized to what stays on), with a check that the set could still run its largest shed load.'
+        : 'the set is sized to run its largest shed load at any time; the module staggers loads for comfort rather than to keep the set within capacity.'} Standard inclusions counted automatically: general lighting &amp; receptacles (${S.vaSqft} VA/sq ft per NEC ${S.necVer}), ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Method: NEC 220.83(B) optional calculation — general and appliance loads demand-factored (first 8 kVA @ 100%, remainder @ 40%), larger of heating or cooling at 100%, largest-motor starting check against running load. Sizing policy: running load capped at 90% of the unit's rating on the selected fuel; starting peak within ${SURGE_FACTOR}× rating. Ratings shown are typical published figures — final selection verified against manufacturer spec sheets. This is a sizing aid, not an engineering document. · NASGD — National Association of Standby Generator Dealers · By Dealers. For the Industry.</div>`;
 }
 
 /* ---------- wizard / mode ---------- */
@@ -914,7 +964,7 @@ const store = {
   set(v){ try{ localStorage.setItem('nasgdSizer', JSON.stringify(v)); }catch(e){} }
 };
 function saveDealer(){
-  store.set({ dealer:S.dealer, logo:S.logoData, brandSel:S.brandSel, noOem:S.noOem, meter:S.gas.meter });
+  store.set({ dealer:S.dealer, logo:S.logoData, brandSel:S.brandSel, noOem:S.noOem, meter:S.gas.meter, mgmtMode:S.mgmtMode });
 }
 function loadDealer(){
   const v = store.get(); if(!v) return;
@@ -922,16 +972,22 @@ function loadDealer(){
   if (v.logo) S.logoData = v.logo;
   if (v.brandSel) S.brandSel = Object.assign(S.brandSel, v.brandSel);
   if (typeof v.noOem === 'boolean') S.noOem = v.noOem;
+  if (v.mgmtMode === 'shed' || v.mgmtMode === 'carry') S.mgmtMode = v.mgmtMode;
   if (v.meter) S.gas.meter = v.meter;
   $('jBizName').value = S.dealer.name; $('jBizPhone').value = S.dealer.phone; $('jBizWeb').value = S.dealer.web;
   document.querySelectorAll('.brandSel').forEach(cb=>cb.checked = !!S.brandSel[cb.value]);
   $('noOem').checked = S.noOem;
+  const mr = document.querySelector(`input[name="mgmtMode"][value="${S.mgmtMode}"]`); if (mr) mr.checked = true;
 }
 
 document.querySelectorAll('.brandSel').forEach(cb=>cb.addEventListener('change',e=>{
   S.brandSel[e.target.value]=e.target.checked; saveDealer(); refreshResultsOnly();
 }));
 $('noOem').addEventListener('change',e=>{S.noOem=e.target.checked;saveDealer();refreshResultsOnly();});
+document.querySelectorAll('input[name="mgmtMode"]').forEach(r=>r.addEventListener('change',e=>{
+  if(!e.target.checked) return;
+  S.mgmtMode = e.target.value; saveDealer(); refreshResultsOnly();
+}));
 [['jBizName','name'],['jBizPhone','phone'],['jBizWeb','web']].forEach(([id,key])=>
   $(id).addEventListener('change',e=>{S.dealer[key]=e.target.value.trim();saveDealer();}));
 $('logoFile').addEventListener('change',e=>{
