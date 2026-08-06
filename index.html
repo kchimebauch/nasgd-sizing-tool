@@ -161,7 +161,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     </div>
   </div>
   <div class="toolbar">
-    <button class="btn ghost" id="modeBtn">Expert mode</button>
+    <button class="btn ghost" id="modeBtn">Expert Mode</button>
     <button class="btn ghost" id="resetBtn">Reset</button>
     <button class="btn primary" id="printBtn">Print summary</button>
   </div>
@@ -196,8 +196,8 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">
         <span style="font-size:12px;color:var(--ink-3)">Brands presented:</span>
-        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Kohler" checked>Kohler</label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Generac" checked>Generac</label>
+        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Kohler" checked>Kohler</label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Briggs &amp; Stratton" checked>Briggs &amp; Stratton</label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="noOem" class="inc">No OEM &mdash; kW only, no brands</label>
       </div>
@@ -243,9 +243,9 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
     </div>
   </section>
 
-  <!-- STEP 3: Well & pumps -->
+  <!-- STEP 3: Well & Pumps -->
   <section class="card step" data-step="2" id="secPumps">
-    <h2>Well &amp; pumps</h2>
+    <h2>Well &amp; Pumps</h2>
     <div class="hint">Motor loads with real inrush. Check what the house has; adjust HP if known.</div>
     <div class="tblwrap"><table class="loads" id="tblPumps"></table></div>
   </section>
@@ -259,8 +259,8 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
 
   <!-- STEP 5: Other -->
   <section class="card step" data-step="4" id="secOther">
-    <h2>Other loads</h2>
-    <div class="hint">Anything else &mdash; EV charger, hot tub, shop equipment, medical equipment. Add running watts (and starting watts for motors).</div>
+    <h2>Other Loads</h2>
+    <div class="hint">Anything else &mdash; hot tub, shop equipment, medical equipment. Add running watts (and starting watts for motors).</div>
     <div class="tblwrap"><table class="loads" id="tblOther"></table></div>
     <button class="btn" id="addOther">+ Add custom load</button>
   </section>
@@ -325,17 +325,6 @@ const PUMP_HP = {
 /* Brand model tables — LP kW / NG kW. APPROXIMATE published ratings;
    verify against current spec sheets before quoting. */
 const BRANDS = [
-  {name:"Kohler", models:[
-    {m:"10 kW (10RESV)", lp:10, ng:9},                     // spec G4-254 ✓ — was mislabelled 10RCA
-    {m:"12 kW (12RESV)", lp:12, ng:11},                    // spec G4-254 ✓ — model was missing
-    {m:"14 kW (14RCA)", lp:14, ng:12},                     // spec G4-270 ✓
-    {m:"20 kW (20RCA)", lp:20, ng:18},                     // spec G4-272 ✓
-    {m:"24 kW (24RCLA) liquid-cooled", lp:24, ng:21, lc:true},      // ✓ — see note: LC, priced above 26RCA
-    {m:"26 kW (26RCA)", lp:26, ng:24},                     // spec G4-315 ✓ (was 22.5 NG)
-    {m:"38 kW (38RCLC) liquid-cooled", lp:38, ng:38, lc:true},      // ✓ (was 35 NG)
-    {m:"48 kW (48RCLC) liquid-cooled", lp:48, ng:48, lc:true},      // spec G4-306 ✓ (was 47 NG)
-    {m:"60 kW (60RCLB) liquid-cooled", lp:60, ng:58, lc:true}       // spec G4-307 ✓
-  ]},
   {name:"Generac", models:[
     {m:"10 kW Guardian", lp:10, ng:9},
     {m:"14 kW Guardian", lp:14, ng:14},      // spec 10-18 kW Guardian ✓ (was 13 NG)
@@ -349,6 +338,17 @@ const BRANDS = [
     {m:"38 kW Protector QS", lp:38, ng:38, lc:true},  // QS spec sheet RG03824
     {m:"48 kW Protector", lp:48, ng:48, lc:true},     // spec RG04845 ✓ (was 45 NG)
     {m:"60 kW Protector", lp:60, ng:60, lc:true}   // spec RG048/060/080 ✓ (was 57 NG)
+  ]},
+  {name:"Kohler", models:[
+    {m:"10 kW (10RESV)", lp:10, ng:9},                     // spec G4-254 ✓ — was mislabelled 10RCA
+    {m:"12 kW (12RESV)", lp:12, ng:11},                    // spec G4-254 ✓ — model was missing
+    {m:"14 kW (14RCA)", lp:14, ng:12},                     // spec G4-270 ✓
+    {m:"20 kW (20RCA)", lp:20, ng:18},                     // spec G4-272 ✓
+    {m:"24 kW (24RCLA) liquid-cooled", lp:24, ng:21, lc:true},      // ✓ — see note: LC, priced above 26RCA
+    {m:"26 kW (26RCA)", lp:26, ng:24},                     // spec G4-315 ✓ (was 22.5 NG)
+    {m:"38 kW (38RCLC) liquid-cooled", lp:38, ng:38, lc:true},      // ✓ (was 35 NG)
+    {m:"48 kW (48RCLC) liquid-cooled", lp:48, ng:48, lc:true},      // spec G4-306 ✓ (was 47 NG)
+    {m:"60 kW (60RCLB) liquid-cooled", lp:60, ng:58, lc:true}       // spec G4-307 ✓
   ]},
   {name:"Briggs & Stratton", models:[
     {m:"13 kW PowerProtect", lp:13, ng:11.5},   // ✓
@@ -490,9 +490,9 @@ const S = {
   acs:[ {tons:3, lra:TON_TABLE[3].lra, soft:false, essential:false, managed:true, on:true} ],
   heat:'gas', heatKw:10, auxKw:5, auxManaged:true,
   pumps:[
-    {key:'well',  name:'Well pump',      hp:'1',   on:false, essential:true,  managed:false},
-    {key:'sump',  name:'Sump pump',      hp:'1/3', on:false, essential:true,  managed:false},
-    {key:'sew',   name:'Sewage ejector', hp:'1/2', on:false, essential:true,  managed:false}
+    {key:'well',  name:'Well Pump',      hp:'1',   on:false, essential:true,  managed:false},
+    {key:'sump',  name:'Sump Pump',      hp:'1/3', on:false, essential:true,  managed:false},
+    {key:'sew',   name:'Sewage Ejector', hp:'1/2', on:false, essential:true,  managed:false}
   ],
   gen:[
     {name:'Refrigerator',            run:700,  start:2200, qty:1, on:true,  essential:true,  managed:false, motor:true},
@@ -566,7 +566,7 @@ function activeLoads(state){
 const $ = id => document.getElementById(id);
 const fmt = n => n.toLocaleString('en-US',{maximumFractionDigits:0});
 const fkw = n => (Math.round(n*10)/10).toLocaleString('en-US',{minimumFractionDigits:1,maximumFractionDigits:1});
-const STEPS = ['Project & site','Cooling / heating','Well & pumps','Kitchen & general','Other loads','Results'];
+const STEPS = ['Project & Site','Cooling / Heating','Well & Pumps','Kitchen & General','Other Loads','Results'];
 
 function tagBtn(kind, on, cb){
   const lab = document.createElement('label');
@@ -943,7 +943,7 @@ function refresh(){
 /* ---------- events ---------- */
 $('modeBtn').addEventListener('click',()=>{
   S.expert=!S.expert;
-  $('modeBtn').textContent = S.expert?'Wizard mode':'Expert mode';
+  $('modeBtn').textContent = S.expert?'Wizard Mode':'Expert Mode';
   $('modeBtn').classList.toggle('on',S.expert);
   refresh();
 });
