@@ -192,8 +192,10 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       <label class="f">Fuel
         <select id="jFuel"><option value="NG">Natural gas</option><option value="LP">Propane (LP)</option></select>
       </label>
+      <label class="f">Site elevation (ft)<input type="number" id="jElev" value="0" min="0" max="12000" step="100"></label>
+      <label class="f">Summer design temp (°F)<input type="number" id="jAmbF" value="60" min="40" max="130"></label>
       <label class="f">NEC version (lighting load)
-        <select id="jNec"><option value="2023">NEC 2023 — 3 VA/sq ft</option><option value="2026">NEC 2026 — 2 VA/sq ft (LED era)</option></select>
+        <select id="jNec"><option value="2023">NEC 2023 and earlier — 3 VA/sq ft</option><option value="2026">NEC 2026 — 2 VA/sq ft (LED era)</option></select>
       </label>
     </div>
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
@@ -207,6 +209,7 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
         <span style="font-size:12px;color:var(--ink-3)">Brands presented:</span>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Generac" checked>Generac</label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Kohler" checked>Kohler</label>
+        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Cummins" checked>Cummins</label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Briggs &amp; Stratton" checked>Briggs &amp; Stratton</label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="noOem" class="inc">No OEM &mdash; kW only, no brands</label>
       </div>
@@ -338,6 +341,15 @@ const SURGE_FACTOR = 2.0;     // momentary motor-starting capability vs rated kW
 const MAX_LOAD_PCT = 0.90;    // 90% cap policy — target loading
 const SOFT_CAP     = 0.93;    // 90–93% = still offered, flagged "verify loads" — estimator's call
 const MANAGED_CAP  = 1.00;    // Size-to-Shed guard: set must still be able to RUN its largest shed load
+// Site derating — manufacturer published figures (Generac 20/22/24 Guardian spec sheet):
+// output falls ~3.5% per 1,000 ft of elevation and ~1% per 10 °F above 60 °F ambient.
+const DERATE_PER_KFT = 0.035, DERATE_PER_10F = 0.01, DERATE_BASE_F = 60;
+function siteDerate(){
+  const alt = Math.max(0, S.elev) / 1000 * DERATE_PER_KFT;
+  const tmp = Math.max(0, S.ambientF - DERATE_BASE_F) / 10 * DERATE_PER_10F;
+  return Math.max(0.5, 1 - alt - tmp);
+}
+function deratePct(){ return Math.round((1 - siteDerate())*100); }
 const SOFT_START_MULT = 0.35; // soft starter leaves ~35% of inrush
 const V = 240;
 
@@ -386,6 +398,17 @@ const BRANDS = [
     {m:"48 kW (48RCLC) liquid-cooled", lp:48, ng:48, lc:true},      // spec G4-306 ✓ (was 47 NG)
     {m:"60 kW (60RCLB) liquid-cooled", lp:60, ng:58, lc:true}       // spec G4-307 ✓
   ]},
+  {name:"Cummins", models:[
+    {m:"RS13A (13 kW)", lp:13, ng:13},                       // QuietConnect spec — 54.2 A both fuels ✓
+    {m:"RS17A (17 kW)", lp:17, ng:17},                       // 70.8 A both fuels ✓
+    {m:"RS20A (20 kW)", lp:20, ng:18},                       // 83.3 A LP / 75 A NG ✓
+    {m:"RS25 (25 kW) liquid-cooled", lp:25, ng:25, lc:true},  // 104.2 A both fuels ✓
+    {m:"RS30 (30 kW) liquid-cooled", lp:30, ng:30, lc:true},  // brochure — confirm on spec sheet
+    {m:"RS36 (36 kW) liquid-cooled", lp:36, ng:36, lc:true},  // brochure — confirm on spec sheet
+    {m:"RS40 (40 kW) liquid-cooled", lp:40, ng:40, lc:true},  // brochure — confirm on spec sheet
+    {m:"RS50 (50 kW) liquid-cooled", lp:50, ng:50, lc:true},  // brochure — confirm on spec sheet
+    {m:"RS60 (60 kW) liquid-cooled", lp:60, ng:60, lc:true}   // brochure — confirm on spec sheet
+  ]},
   {name:"Briggs & Stratton", models:[
     {m:"13 kW PowerProtect", lp:13, ng:11.5},   // ✓
     {m:"18 kW PowerProtect", lp:18, ng:18},     // ✓ NGMax — replaces superseded 17 kW
@@ -403,7 +426,8 @@ function fuelDraw(kw){ return { btu: kw*BTU_PER_KW_FULL, gal: kw*BTU_PER_KW_FULL
 // Generic standard size steps for No-OEM presentation (air-cooled + liquid-cooled classes)
 const STD_SIZES = [10,13,14,18,20,22,24,26,32,38,48,60];
 function pickGeneric(runningKW, peakKW){
-  return STD_SIZES.find(s => runningKW <= s*MAX_LOAD_PCT && peakKW <= s*SURGE_FACTOR) || null;
+  const dr = siteDerate();
+  return STD_SIZES.find(s => runningKW <= s*dr*MAX_LOAD_PCT && peakKW <= s*dr*SURGE_FACTOR) || null;
 }
 
 /* ---- load model ----
@@ -492,17 +516,19 @@ function pickModels(requiredKW, runningKW, peakKW, fuel, shedGuardKW){
     // unit costs far more than an air-cooled one of similar rating, so it should never
     // be recommended just because its kW number happens to be lower.
     const sorted = [...b.models].sort((a,x)=>(a.lc?1:0)-(x.lc?1:0) || a[key]-x[key]);
+    const dr = siteDerate();                       // site output at this elevation/ambient
+    const eff = m => m[key]*dr;
     const fit = sorted.find(m =>
-      runningKW <= m[key]*SOFT_CAP && peakKW <= m[key]*SURGE_FACTOR &&
-      (!shedGuardKW || shedGuardKW <= m[key]*MANAGED_CAP));
+      runningKW <= eff(m)*SOFT_CAP && peakKW <= eff(m)*SURGE_FACTOR &&
+      (!shedGuardKW || shedGuardKW <= eff(m)*MANAGED_CAP));
     if (fit){
-      const pct = runningKW / fit[key];
+      const pct = runningKW / eff(fit);
       // next size up in this lineup, offered when the fit lands in the soft band
       const nextUp = pct > MAX_LOAD_PCT
-        ? sorted.find(m => m[key] > fit[key] && peakKW <= m[key]*SURGE_FACTOR) : null;
-      out.push({brand:b.name, model:fit.m, rated:fit[key], pct,
+        ? sorted.find(m => eff(m) > eff(fit) && peakKW <= eff(m)*SURGE_FACTOR) : null;
+      out.push({brand:b.name, model:fit.m, rated:fit[key], ratedSite:eff(fit), derated:dr<1, pct,
                 status: pct <= 0.8 ? 'ok' : (pct <= MAX_LOAD_PCT ? 'tight' : 'verify'),
-                nextUp: nextUp ? {model:nextUp.m, rated:nextUp[key], pct:runningKW/nextUp[key]} : null});
+                nextUp: nextUp ? {model:nextUp.m, rated:nextUp[key], pct:runningKW/eff(nextUp)} : null});
     } else {
       out.push({brand:b.name, model:'— above lineup', rated:null, pct:null, status:'over'});
     }
@@ -517,7 +543,7 @@ function sum(arr, fn){ return arr.reduce((a,x)=>a+fn(x), 0); }
 const S = {
   expert:false, step:0,
   generalEssential:true,
-  brandSel:{"Kohler":true,"Generac":true,"Briggs & Stratton":true},
+  brandSel:{"Generac":true,"Kohler":true,"Cummins":true,"Briggs & Stratton":true},
   noOem:false, logoData:null,
   mgmtMode:'carry',   // 'carry' = set runs its largest shed load · 'shed' = shed loads excluded
   cust:{ scen:{whole:true, managed:true, essential:false}, brand:'all',
@@ -554,6 +580,8 @@ const S = {
 };
 Object.defineProperty(S,'sqft',{get(){return +document.getElementById('jSqft').value||0}});
 Object.defineProperty(S,'sac', {get(){return +document.getElementById('jSAC').value||2}});
+Object.defineProperty(S,'elev',{get(){return Math.max(0,+document.getElementById('jElev').value||0)}});
+Object.defineProperty(S,'ambientF',{get(){const v=+document.getElementById('jAmbF').value; return isNaN(v)?60:v}});
 S.laundry = 1; // NEC-required laundry circuit — always counted, no input needed
 Object.defineProperty(S,'fuel',{get(){return document.getElementById('jFuel').value}});
 Object.defineProperty(S,'necVer',{get(){return document.getElementById('jNec').value}});
@@ -736,7 +764,9 @@ function scenCard(r){
       ${models.map(m=>`<tr>
         <td>${m.brand}</td>
         <td>${m.model}${m.status==='verify'&&m.nextUp?`<div class="nextup">tight — or step up to <b>${m.nextUp.model}</b> (${Math.round(m.nextUp.pct*100)}%)</div>`:''}</td>
-        <td class="num">${m.rated?fkw(m.rated)+' kW':'—'}</td>
+        <td class="num">${m.rated?(m.derated
+            ? fkw(m.ratedSite)+' kW<div class="nextup">'+fkw(m.rated)+' kW nameplate</div>'
+            : fkw(m.rated)+' kW'):'—'}</td>
         <td>${m.rated?`<span class="pill ${m.status}">${Math.round(m.pct*100)}%</span>`:'<span class="pill over">size up</span>'}</td>
       </tr>`).join('')}
     </table>
@@ -822,7 +852,7 @@ function renderResults(){
   host.appendChild(grid);
   host.appendChild(gasCard(lastResults));
   const note = document.createElement('div'); note.className='note';
-  note.innerHTML = `<b>Standard inclusions</b> (counted automatically, no entry needed): general lighting &amp; receptacles at ${S.vaSqft} VA/sq ft, ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Uncheck any load in step 4 for the rare home without it.<br>
+  note.innerHTML = `${deratePct()>0?`<b style="color:#B45309">Site derate applied: −${deratePct()}%</b> — at ${fmt(S.elev)} ft and ${S.ambientF}°F, published ratings are reduced ${DERATE_PER_KFT*100}% per 1,000 ft and ${DERATE_PER_10F*100}% per 10°F above ${DERATE_BASE_F}°F. The RATED column shows output at this site; nameplate is beneath it.<br>`:''}<b>Standard inclusions</b> (counted automatically, no entry needed): general lighting &amp; receptacles at ${S.vaSqft} VA/sq ft, ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Uncheck any load in step 4 for the rare home without it.<br>
   Loading pills: <b>≤80%</b> comfortable · <b>80–90%</b> acceptable (90% target) · <b>90–93%</b> workable but flagged — verify the load list, step up if anything is uncertain · above 93% the unit is bumped up automatically, as is any unit whose start peak exceeds ${SURGE_FACTOR}× rating.
   Model ratings are typical published LP/NG figures — <b>verify against current spec sheets before quoting</b>. LRA values by tonnage are typical; use nameplate when available. Soft starter modeled at ${Math.round((1-SOFT_START_MULT)*100)}% inrush reduction.`;
   host.appendChild(note);
@@ -1046,7 +1076,7 @@ function renderPrint(){
       <img src="${NASGD_LOGO}" alt="NASGD" style="height:30px">
       <span style="font-size:11px;color:#333"><b>Proud Member</b> — National Association of Standby Generator Dealers<br>By Dealers. For the Industry. · nasgd.com</span>
     </div>
-    <div class="foot">Load-management sizing policy: <b>${S.mgmtMode==='shed'?'Size to Shed':'Size to Carry'}</b> — ${S.mgmtMode==='shed'
+    <div class="foot">${deratePct()>0?`Site derate: ratings reduced <b>${deratePct()}%</b> for ${fmt(S.elev)} ft elevation and ${S.ambientF}°F design temperature (${DERATE_PER_KFT*100}% per 1,000 ft, ${DERATE_PER_10F*100}% per 10°F above ${DERATE_BASE_F}°F). `:''}Load-management sizing policy: <b>${S.mgmtMode==='shed'?'Size to Shed':'Size to Carry'}</b> — ${S.mgmtMode==='shed'
         ? 'shed loads are excluded from the continuous requirement (the set is sized to what stays on), with a check that the set could still run its largest shed load.'
         : 'the set is sized to run its largest shed load at any time; the module staggers loads for comfort rather than to keep the set within capacity.'} Standard inclusions counted automatically: general lighting &amp; receptacles (${S.vaSqft} VA/sq ft per NEC ${S.necVer}), ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Method: NEC 220.83(B) optional calculation — general and appliance loads demand-factored (first 8 kVA @ 100%, remainder @ 40%), larger of heating or cooling at 100%, largest-motor starting check against running load. Sizing policy: running load capped at 90% of the unit's rating on the selected fuel; starting peak within ${SURGE_FACTOR}× rating. Ratings shown are typical published figures — final selection verified against manufacturer spec sheets. This is a sizing aid, not an engineering document. · NASGD — National Association of Standby Generator Dealers · By Dealers. For the Industry.</div>`;
 }
