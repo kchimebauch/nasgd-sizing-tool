@@ -192,8 +192,16 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       <label class="f">Fuel
         <select id="jFuel"><option value="NG">Natural gas</option><option value="LP">Propane (LP)</option></select>
       </label>
-      <label class="f">Site elevation (ft)<input type="number" id="jElev" value="0" min="0" max="12000" step="100"></label>
-      <label class="f">Summer design temp (°F)<input type="number" id="jAmbF" value="60" min="40" max="130"></label>
+      <label class="f">Site elevation (ft)
+        <span style="display:flex;gap:6px;align-items:center">
+          <input type="number" id="jElev" value="0" min="0" max="12000" step="10" style="flex:1">
+          <button class="btn" id="geoBtn" type="button" style="padding:6px 10px;font-size:11.5px;white-space:nowrap" title="Use this device's location to look up site elevation">Use location</button>
+        </span>
+        <span id="elevNote" style="font-size:10.5px;color:var(--ink-3);margin-top:2px"></span>
+      </label>
+      <label class="f">Summer design temp
+        <select id="jAmbF"></select>
+      </label>
       <label class="f">NEC version (lighting load)
         <select id="jNec"><option value="2023">NEC 2023 and earlier — 3 VA/sq ft</option><option value="2026">NEC 2026 — 2 VA/sq ft (LED era)</option></select>
       </label>
@@ -217,6 +225,19 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
         <span style="font-size:12px;color:var(--ink-3)">Your logo (replaces NASGD logo on screen; leads the printed summary):</span>
         <input type="file" id="logoFile" accept="image/*" style="font-size:12px">
         <button class="btn" id="logoClear" style="display:none;padding:4px 10px;font-size:12px">Remove logo</button>
+      </div>
+
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
+        <div style="font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:2px">DEFAULT SITE CONDITIONS
+          <span style="font-weight:400;color:var(--ink-3)">— most members work one market. Set these once and every new job starts here; override per job on this step.</span></div>
+        <div class="custrow">
+          <span class="custlbl">Default elevation (ft):</span>
+          <input type="number" id="jDefElev" value="0" min="0" max="12000" step="10"
+                 style="width:110px;font-size:12px;padding:5px 8px;border:1px solid var(--line);border-radius:6px">
+          <span class="custlbl" style="margin-left:14px">Default summer temp:</span>
+          <select id="jDefAmbF" style="font-size:12px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;max-width:280px"></select>
+        </div>
+        <div class="modenote">Output falls about 3.5% per 1,000 ft of elevation and 1% per 10°F above 60°F. Elevation is the one that matters — sea level to 8,000 ft is a 28% swing, while the entire national range of summer design temperatures spans about 3%.</div>
       </div>
 
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
@@ -546,6 +567,7 @@ const S = {
   brandSel:{"Generac":true,"Kohler":true,"Cummins":true,"Briggs & Stratton":true},
   noOem:false, logoData:null,
   mgmtMode:'carry',   // 'carry' = set runs its largest shed load · 'shed' = shed loads excluded
+  defaults:{ elev:0, ambF:60 },   // dealer-level site defaults — most members work one metro
   cust:{ scen:{whole:true, managed:true, essential:false}, brand:'all',
          inc:{outage:true, surge:true, soft:true, fuel:true, basis:true} },
   dealer:{name:'', phone:'', web:''},
@@ -582,6 +604,15 @@ Object.defineProperty(S,'sqft',{get(){return +document.getElementById('jSqft').v
 Object.defineProperty(S,'sac', {get(){return +document.getElementById('jSAC').value||2}});
 Object.defineProperty(S,'elev',{get(){return Math.max(0,+document.getElementById('jElev').value||0)}});
 Object.defineProperty(S,'ambientF',{get(){const v=+document.getElementById('jAmbF').value; return isNaN(v)?60:v}});
+S.elevSource = 'default';   // 'default' | 'entered' | 'device'
+const TEMP_BANDS = [
+  {f:60,  label:'Not applied — manufacturer test basis (60°F)'},
+  {f:85,  label:'Mild — 85°F (Pacific NW, coastal, far north)'},
+  {f:90,  label:'Moderate — 90°F (most of the country)'},
+  {f:95,  label:'Hot — 95°F (South, Southeast, lower Midwest)'},
+  {f:105, label:'Very hot — 105°F (interior West, Texas)'},
+  {f:115, label:'Desert — 115°F (Phoenix, Vegas, inland SoCal)'}
+];
 S.laundry = 1; // NEC-required laundry circuit — always counted, no input needed
 Object.defineProperty(S,'fuel',{get(){return document.getElementById('jFuel').value}});
 Object.defineProperty(S,'necVer',{get(){return document.getElementById('jNec').value}});
@@ -1076,7 +1107,7 @@ function renderPrint(){
       <img src="${NASGD_LOGO}" alt="NASGD" style="height:30px">
       <span style="font-size:11px;color:#333"><b>Proud Member</b> — National Association of Standby Generator Dealers<br>By Dealers. For the Industry. · nasgd.com</span>
     </div>
-    <div class="foot">${deratePct()>0?`Site derate: ratings reduced <b>${deratePct()}%</b> for ${fmt(S.elev)} ft elevation and ${S.ambientF}°F design temperature (${DERATE_PER_KFT*100}% per 1,000 ft, ${DERATE_PER_10F*100}% per 10°F above ${DERATE_BASE_F}°F). `:''}Load-management sizing policy: <b>${S.mgmtMode==='shed'?'Size to Shed':'Size to Carry'}</b> — ${S.mgmtMode==='shed'
+    <div class="foot">${deratePct()>0?`Site derate: ratings reduced <b>${deratePct()}%</b> for ${fmt(S.elev)} ft elevation (${{device:'from device location',entered:'entered',default:'dealer default'}[S.elevSource]||'entered'}) and ${S.ambientF}°F design temperature (${DERATE_PER_KFT*100}% per 1,000 ft, ${DERATE_PER_10F*100}% per 10°F above ${DERATE_BASE_F}°F). `:''}Load-management sizing policy: <b>${S.mgmtMode==='shed'?'Size to Shed':'Size to Carry'}</b> — ${S.mgmtMode==='shed'
         ? 'shed loads are excluded from the continuous requirement (the set is sized to what stays on), with a check that the set could still run its largest shed load.'
         : 'the set is sized to run its largest shed load at any time; the module staggers loads for comfort rather than to keep the set within capacity.'} Standard inclusions counted automatically: general lighting &amp; receptacles (${S.vaSqft} VA/sq ft per NEC ${S.necVer}), ${S.sac} kitchen small-appliance circuits, the NEC laundry circuit, and a garbage disposal. Method: NEC 220.83(B) optional calculation — general and appliance loads demand-factored (first 8 kVA @ 100%, remainder @ 40%), larger of heating or cooling at 100%, largest-motor starting check against running load. Sizing policy: running load capped at 90% of the unit's rating on the selected fuel; starting peak within ${SURGE_FACTOR}× rating. Ratings shown are typical published figures — final selection verified against manufacturer spec sheets. This is a sizing aid, not an engineering document. · NASGD — National Association of Standby Generator Dealers · By Dealers. For the Industry.</div>`;
 }
@@ -1136,6 +1167,51 @@ document.querySelectorAll('.custInc').forEach(cb=>cb.addEventListener('change',e
   S.cust.inc[e.target.value]=e.target.checked; saveDealer();
 }));
 $('custBrand').addEventListener('change',e=>{S.cust.brand=e.target.value; saveDealer();});
+$('jDefElev').addEventListener('change',e=>{
+  S.defaults.elev = Math.max(0,+e.target.value||0); saveDealer();
+  if (S.elevSource==='default'){ $('jElev').value = S.defaults.elev; setElevNote(); refreshResultsOnly(); }
+});
+$('jDefAmbF').addEventListener('change',e=>{
+  S.defaults.ambF = +e.target.value||60; saveDealer();
+  $('jAmbF').value = S.defaults.ambF; setElevNote(); refreshResultsOnly();
+});
+function fillTempBands(){
+  const sel=$('jAmbF'); const cur=+sel.value||S.defaults.ambF||60;
+  sel.innerHTML = TEMP_BANDS.map(b=>`<option value="${b.f}">${b.label}</option>`).join('');
+  sel.value = TEMP_BANDS.some(b=>b.f===cur) ? cur : 60;
+}
+function setElevNote(){
+  const el=$('elevNote'); if(!el) return;
+  const src = {device:'from this device\u2019s location', entered:'entered manually', default:'your saved default'}[S.elevSource]||'';
+  const d = deratePct();
+  el.textContent = d>0 ? `${src} \u00b7 ratings derated \u2212${d}% at this site`
+                       : `${src} \u00b7 no derate at this elevation`;
+}
+$('jElev').addEventListener('input',()=>{ S.elevSource='entered'; setElevNote(); });
+$('jElev').addEventListener('change',()=>{ setElevNote(); refreshResultsOnly(); });
+$('jAmbF').addEventListener('change',()=>{ setElevNote(); refreshResultsOnly(); });
+$('geoBtn').addEventListener('click',()=>{
+  const btn=$('geoBtn'), note=$('elevNote');
+  if(!navigator.geolocation){ note.textContent='This browser cannot provide location \u2014 enter elevation manually.'; return; }
+  btn.disabled=true; btn.textContent='Locating\u2026';
+  navigator.geolocation.getCurrentPosition(pos=>{
+    const {latitude:la, longitude:lo} = pos.coords;
+    fetch(`https://api.open-meteo.com/v1/elevation?latitude=${la}&longitude=${lo}`)
+      .then(r=>r.json())
+      .then(j=>{
+        const ft = Math.round(j.elevation[0]*3.28084);
+        $('jElev').value = ft; S.elevSource='device';
+        btn.disabled=false; btn.textContent='Use location';
+        setElevNote(); refreshResultsOnly();
+      })
+      .catch(()=>{ btn.disabled=false; btn.textContent='Use location';
+        note.textContent='Elevation lookup unavailable offline \u2014 enter it manually.'; });
+  }, err=>{
+    btn.disabled=false; btn.textContent='Use location';
+    note.textContent = err.code===1 ? 'Location permission denied \u2014 enter elevation manually.'
+                                    : 'Could not get location \u2014 enter elevation manually.';
+  }, {enableHighAccuracy:false, timeout:10000, maximumAge:600000});
+});
 function fillCustBrands(){
   const sel=$('custBrand'); const cur=S.cust.brand;
   sel.innerHTML='<option value="all">All brands shown</option>'+
@@ -1158,7 +1234,7 @@ const store = {
   set(v){ try{ localStorage.setItem('nasgdSizer', JSON.stringify(v)); }catch(e){} }
 };
 function saveDealer(){
-  store.set({ dealer:S.dealer, logo:S.logoData, brandSel:S.brandSel, noOem:S.noOem, meter:S.gas.meter, mgmtMode:S.mgmtMode, cust:S.cust });
+  store.set({ dealer:S.dealer, logo:S.logoData, brandSel:S.brandSel, noOem:S.noOem, meter:S.gas.meter, mgmtMode:S.mgmtMode, cust:S.cust, defaults:S.defaults });
 }
 function loadDealer(){
   const v = store.get(); if(!v) return;
@@ -1167,6 +1243,12 @@ function loadDealer(){
   if (v.brandSel) S.brandSel = Object.assign(S.brandSel, v.brandSel);
   if (typeof v.noOem === 'boolean') S.noOem = v.noOem;
   if (v.mgmtMode === 'shed' || v.mgmtMode === 'carry') S.mgmtMode = v.mgmtMode;
+  if (v.defaults) {
+    S.defaults = Object.assign(S.defaults, v.defaults);
+    $('jDefElev').value = S.defaults.elev;
+    $('jElev').value = S.defaults.elev; S.elevSource = 'default';
+    $('jDefAmbF').value = S.defaults.ambF; $('jAmbF').value = S.defaults.ambF;
+  }
   if (v.cust) { S.cust = Object.assign(S.cust, v.cust);
     document.querySelectorAll('.custScen').forEach(cb=>cb.checked = !!S.cust.scen[cb.value]);
     document.querySelectorAll('.custInc').forEach(cb=>cb.checked = !!S.cust.inc[cb.value]); }
@@ -1202,8 +1284,14 @@ function applyLogo(){
   $('logoClear').style.display = S.logoData ? '' : 'none';
 }
 
+function fillDefaultTempBands(){
+  const sel=$('jDefAmbF');
+  sel.innerHTML = TEMP_BANDS.map(b=>`<option value="${b.f}">${b.label}</option>`).join('');
+  sel.value = S.defaults.ambF;
+}
+fillTempBands(); fillDefaultTempBands();
 loadDealer();
-fillCustBrands();
+fillCustBrands(); fillTempBands(); fillDefaultTempBands(); setElevNote();
 applyLogo();
 refresh();
 </script>
