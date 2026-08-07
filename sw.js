@@ -1,5 +1,5 @@
 /* NASGD Sizer service worker — cache-first so the tool keeps working with no signal */
-const CACHE = 'nasgd-sizer-v17';
+const CACHE = 'nasgd-sizer-v18';
 const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', e => {
