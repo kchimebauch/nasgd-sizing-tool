@@ -192,34 +192,34 @@ if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       <label class="f">Fuel
         <select id="jFuel"><option value="NG">Natural gas</option><option value="LP">Propane (LP)</option></select>
       </label>
-      <label class="f">Site elevation (ft)
+      <label class="f">Site Elevation (ft)
         <span style="display:flex;gap:6px;align-items:center">
           <input type="number" id="jElev" value="0" min="0" max="12000" step="10" style="flex:1">
           <button class="btn" id="geoBtn" type="button" style="padding:6px 10px;font-size:11.5px;white-space:nowrap" title="Use this device's location to look up site elevation">Use location</button>
         </span>
         <span id="elevNote" style="font-size:10.5px;color:var(--ink-3);margin-top:2px"></span>
       </label>
-      <label class="f">Summer design temp
+      <label class="f">Summer Design temp
         <select id="jAmbF"></select>
       </label>
-      <label class="f">NEC version (lighting load)
+      <label class="f">NEC Version (lighting load)
         <select id="jNec"><option value="2023">NEC 2023 and earlier — 3 VA/sq ft</option><option value="2026">NEC 2026 — 2 VA/sq ft (LED era)</option></select>
       </label>
     </div>
     <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:12px">
       <div style="font-size:12px;font-weight:700;color:var(--ink-2);margin-bottom:8px">DEALER / MEMBER BRANDING <span style="font-weight:400;color:var(--ink-3)">— shown on the printed summary with the NASGD member badge; saved on this device</span></div>
       <div class="grid g3" style="margin-bottom:12px">
-        <label class="f">Business name<input type="text" id="jBizName" placeholder="Your company"></label>
+        <label class="f">Business Name<input type="text" id="jBizName" placeholder="Your company"></label>
         <label class="f">Phone<input type="text" id="jBizPhone" placeholder="(###) ###-####"></label>
         <label class="f">Website / email<input type="text" id="jBizWeb" placeholder="yourcompany.com"></label>
       </div>
       <div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center">
         <span style="font-size:12px;color:var(--ink-3)">Brands presented:</span>
-        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Generac" checked>Generac</label>
+        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="noOem" class="inc">No OEM &mdash; kW only</label>
+        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Briggs &amp; Stratton">Briggs &amp; Stratton</label>
+        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Cummins">Cummins</label>
+        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Generac">Generac</label>
         <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Kohler" checked>Kohler</label>
-        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Cummins" checked>Cummins</label>
-        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" class="brandSel inc" value="Briggs &amp; Stratton" checked>Briggs &amp; Stratton</label>
-        <label class="f" style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="noOem" class="inc">No OEM &mdash; kW only, no brands</label>
       </div>
       <div style="display:flex;gap:12px;align-items:center;margin-top:10px;flex-wrap:wrap">
         <span style="font-size:12px;color:var(--ink-3)">Your logo (replaces NASGD logo on screen; leads the printed summary):</span>
@@ -394,6 +394,23 @@ const PUMP_HP = {
 /* Brand model tables — LP kW / NG kW. APPROXIMATE published ratings;
    verify against current spec sheets before quoting. */
 const BRANDS = [
+  {name:"Briggs & Stratton", models:[
+    {m:"13 kW PowerProtect", lp:13, ng:11.5},   // ✓
+    {m:"18 kW PowerProtect", lp:18, ng:18},     // ✓ NGMax — replaces superseded 17 kW
+    {m:"22 kW PowerProtect", lp:22, ng:22},     // ✓ NGMax — replaces superseded 20 kW
+    {m:"26 kW PowerProtect", lp:26, ng:24}      // ✓
+  ]},
+  {name:"Cummins", models:[
+    {m:"RS13A (13 kW)", lp:13, ng:13},                       // QuietConnect spec — 54.2 A both fuels ✓
+    {m:"RS17A (17 kW)", lp:17, ng:17},                       // 70.8 A both fuels ✓
+    {m:"RS20A (20 kW)", lp:20, ng:18},                       // 83.3 A LP / 75 A NG ✓
+    {m:"RS25 (25 kW) liquid-cooled", lp:25, ng:25, lc:true},  // 104.2 A both fuels ✓
+    {m:"RS30 (30 kW) liquid-cooled", lp:30, ng:30, lc:true},  // brochure — confirm on spec sheet
+    {m:"RS36 (36 kW) liquid-cooled", lp:36, ng:36, lc:true},  // brochure — confirm on spec sheet
+    {m:"RS40 (40 kW) liquid-cooled", lp:40, ng:40, lc:true},  // brochure — confirm on spec sheet
+    {m:"RS50 (50 kW) liquid-cooled", lp:50, ng:50, lc:true},  // brochure — confirm on spec sheet
+    {m:"RS60 (60 kW) liquid-cooled", lp:60, ng:60, lc:true}   // brochure — confirm on spec sheet
+  ]},
   {name:"Generac", models:[
     {m:"10 kW Guardian", lp:10, ng:9},
     {m:"14 kW Guardian", lp:14, ng:14},      // spec 10-18 kW Guardian ✓ (was 13 NG)
@@ -418,23 +435,6 @@ const BRANDS = [
     {m:"38 kW (38RCLC) liquid-cooled", lp:38, ng:38, lc:true},      // ✓ (was 35 NG)
     {m:"48 kW (48RCLC) liquid-cooled", lp:48, ng:48, lc:true},      // spec G4-306 ✓ (was 47 NG)
     {m:"60 kW (60RCLB) liquid-cooled", lp:60, ng:58, lc:true}       // spec G4-307 ✓
-  ]},
-  {name:"Cummins", models:[
-    {m:"RS13A (13 kW)", lp:13, ng:13},                       // QuietConnect spec — 54.2 A both fuels ✓
-    {m:"RS17A (17 kW)", lp:17, ng:17},                       // 70.8 A both fuels ✓
-    {m:"RS20A (20 kW)", lp:20, ng:18},                       // 83.3 A LP / 75 A NG ✓
-    {m:"RS25 (25 kW) liquid-cooled", lp:25, ng:25, lc:true},  // 104.2 A both fuels ✓
-    {m:"RS30 (30 kW) liquid-cooled", lp:30, ng:30, lc:true},  // brochure — confirm on spec sheet
-    {m:"RS36 (36 kW) liquid-cooled", lp:36, ng:36, lc:true},  // brochure — confirm on spec sheet
-    {m:"RS40 (40 kW) liquid-cooled", lp:40, ng:40, lc:true},  // brochure — confirm on spec sheet
-    {m:"RS50 (50 kW) liquid-cooled", lp:50, ng:50, lc:true},  // brochure — confirm on spec sheet
-    {m:"RS60 (60 kW) liquid-cooled", lp:60, ng:60, lc:true}   // brochure — confirm on spec sheet
-  ]},
-  {name:"Briggs & Stratton", models:[
-    {m:"13 kW PowerProtect", lp:13, ng:11.5},   // ✓
-    {m:"18 kW PowerProtect", lp:18, ng:18},     // ✓ NGMax — replaces superseded 17 kW
-    {m:"22 kW PowerProtect", lp:22, ng:22},     // ✓ NGMax — replaces superseded 20 kW
-    {m:"26 kW PowerProtect", lp:26, ng:24}      // ✓
   ]}
 ];
 
@@ -564,7 +564,7 @@ function sum(arr, fn){ return arr.reduce((a,x)=>a+fn(x), 0); }
 const S = {
   expert:false, step:0,
   generalEssential:true,
-  brandSel:{"Generac":true,"Kohler":true,"Cummins":true,"Briggs & Stratton":true},
+  brandSel:{"Generac":false,"Kohler":true,"Cummins":false,"Briggs & Stratton":false},
   noOem:false, logoData:null,
   mgmtMode:'carry',   // 'carry' = set runs its largest shed load · 'shed' = shed loads excluded
   defaults:{ elev:0, ambF:60 },   // dealer-level site defaults — most members work one metro
